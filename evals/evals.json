@@ -1,0 +1,85 @@
+{
+  "skill_name": "hydration-reminder-agentic",
+  "evals": [
+    {
+      "id": 1,
+      "eval_name": "office-worker-first-setup",
+      "prompt": "User says: \"帮我设置个喝水提醒，我上班经常忘喝水，每天大概想喝1500ml，用我现在这个聊天窗口提醒就行。\"",
+      "expected_output": "The assistant should conduct a consultation asking about background, goal, conditions, and frequency. Then present a personalized plan preview with target, reminder times, channel, and notes. Finally ask for confirmation. The plan should be office-worker friendly.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 2,
+      "eval_name": "gym-creatine-user-setup",
+      "prompt": "User says: \"我健身，每天吃肌酸，需要多喝水。帮我定个喝水计划，目标2升。\"",
+      "expected_output": "The assistant should recognize gym/creatine context, ask follow-up questions about workout schedule, then design a plan that includes a creatine+water reminder (e.g., 17:00). Present preview and ask for confirmation.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 3,
+      "eval_name": "pregnancy-limited-water-setup",
+      "prompt": "User says: \"我怀孕了，医生让我控制饮水量，每天不超过1200ml。帮我设置个温和的提醒。\"",
+      "expected_output": "The assistant should acknowledge the pregnancy and doctor's limit, design a conservative plan not exceeding 1200ml, use gentle reminder language, and confirm with the user.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 4,
+      "eval_name": "modify-existing-plan",
+      "prompt": "Context: A hydration plan already exists (target 1500ml, reminders at 09:00/12:00/13:00/18:00/21:00/22:30). User says: \"我想把目标改成2000ml，而且晚上9点后不要提醒了。\"",
+      "expected_output": "The assistant should acknowledge the existing plan, update the target to 2000ml, remove the 21:00 reminder, possibly redistribute the remaining water across earlier reminders, present the updated preview, and ask for confirmation.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 5,
+      "eval_name": "check-today-progress",
+      "prompt": "Context: Today the user has recorded 500ml at 09:00 and 400ml at 13:00, target is 1500ml. User says: \"我今天喝了多少水了？\"",
+      "expected_output": "The assistant should show today's total (900ml), progress bar (██████░░░░ 900ml / 1500ml 60%), remaining amount (600ml), and a friendly summary of recorded segments.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 6,
+      "eval_name": "stop-reminders",
+      "prompt": "User says: \"停止喝水提醒\"",
+      "expected_output": "The assistant should confirm stopping reminders, explain what will happen (no more scheduled reminders), and offer to resume later if needed. Should not ask consultation questions.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 7,
+      "eval_name": "checkpoint-numeric-reply",
+      "prompt": "Context: It's 12:00 checkpoint. Morning target was 500ml. User replies: \"350\"",
+      "expected_output": "The assistant should record 350ml, update today's total, recalculate remaining, and acknowledge. If actual < planned, it should note this and possibly suggest drinking more in the afternoon.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 8,
+      "eval_name": "skip-today",
+      "prompt": "Context: User has an active hydration plan. At a reminder time, user says: \"今天不喝了\"",
+      "expected_output": "The assistant should respect the request, set remaining to 0 for today, send a brief acknowledgement like \"收到，休息一天\" with the progress bar showing current total, and resume normal schedule tomorrow.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 9,
+      "eval_name": "hates-plain-water",
+      "prompt": "User says: \"帮我设喝水提醒，但我特别讨厌喝白开水，一般喝茶和柠檬水。\"",
+      "expected_output": "The assistant should acknowledge that tea and lemon water count toward hydration, design a plan that encourages these alternatives, and not push plain water.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 10,
+      "eval_name": "small-cup-frequent",
+      "prompt": "User says: \"我想多喝水但我杯子很小只有200ml，而且我老忘，能不能多提醒几次每次少喝点？\"",
+      "expected_output": "The assistant should design a plan with more frequent reminders and smaller per-reminder amounts (e.g., 200ml per reminder), possibly adding extra reminders to compensate.",
+      "files": [],
+      "assertions": []
+    }
+  ]
+}
