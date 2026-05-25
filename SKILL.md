@@ -37,6 +37,15 @@ Tone should be **warm, supportive, and encouraging** — like a friendly health 
   4. In **Claude Code specifically**, mention that `/loop` or `CronCreate` can be used to set recurring check-ins within the terminal session.
 - When proactive scheduling **is available** (e.g., Claude Code's `CronCreate`, platform cron jobs, scheduled tasks), use it and explain exactly how it works.
 
+### Production Architecture Guidance (for platforms that support it)
+
+If the host platform supports background execution, file I/O, and cron scheduling, follow this architecture to achieve production-grade reliability:
+
+1. **Master-Worker Split**: The main session (master) handles user chat and state writes. Scheduled reminders spawn short-lived worker sessions (or subagents) that read state, send messages, and log outcomes. The master never blocks on worker tasks.
+2. **State Isolation**: Use a dedicated state directory (e.g., `state/water.json`). Do not mix state files with memory files (`memory/*.md`) or conversation history.
+3. **Concurrency Safety**: If multiple workers or the master may write state simultaneously, use file locking (`fcntl` on Unix, `msvcrt` on Windows) or atomic write (write to temp → fsync → rename) to prevent corruption.
+4. **Graceful Degradation**: If the scheduling channel fails (e.g., messaging API down), log the failure, retry on the next scheduled cycle, and inform the user with a warm message — never crash or lose state.
+
 ## Workflow
 
 ### Phase 1: Consultation (Key Node — Always Ask At Least One Follow-Up)
@@ -134,12 +143,18 @@ Store the schedule configuration in a persistent file so the agent remembers the
 ```
 
 **When user replies with a number:**
-- Record the amount
-- Update today's total
-- Recalculate remaining
-- Adjust future reminder messages dynamically
-- If actual < planned, acknowledge the gap warmly and say future reminders will be increased to compensate
-- If actual >= planned, celebrate!
+1. Record the amount
+2. Update today's total
+3. Recalculate remaining: `remaining = target - total`
+4. Count how many reminders are still ahead today (excluding the current one and bedtime summary)
+5. Redistribute the remaining water across those future reminders:
+   - `new_amount_per_reminder = remaining / future_reminders_count`
+   - Round to nearest 50ml (or 1 cup if user thinks in cups)
+6. Update each future reminder's planned amount in state
+7. Acknowledge warmly:
+   - If actual < planned: "收到！距离计划还差 {gap}ml，后面的提醒我会帮你多补一点 💪"
+   - If actual >= planned: "太棒了，准时达标！🎉 后面的节奏保持住~"
+8. Send the updated plan preview if the user seems confused about the redistribution
 
 **Bedtime summary (22:30, or earlier if user prefers):**
 ```
@@ -154,6 +169,8 @@ Store the schedule configuration in a persistent file so the agent remembers the
 
 明天继续当前计划？回复"继续"或"调整"。
 ```
+
+This summary is **mandatory** — never skip it, even if the user didn't respond to earlier reminders.
 
 ### Phase 5: Next-Day Kickoff
 If user replies "继续" → reset daily state, same plan continues
@@ -179,6 +196,45 @@ Maintain a daily state record. The exact storage mechanism depends on the platfo
 }
 ```
 
+### Production State Practices
+
+For platforms with persistent file storage, follow these practices to ensure reliability:
+
+1. **Daily rollover**: At 00:00 or on first interaction of a new day, archive yesterday's state (e.g., `state/water-YYYY-MM-DD.json`) and initialize a fresh state for today.
+2. **Atomic writes**: Write to a temp file, then rename it to the target path. This prevents half-written JSON on crashes.
+3. **Read-with-fallback**: If the state file is missing or corrupt, auto-initialize with default target 1500ml and inform the user. Do not crash.
+4. **Backup on modify**: Before writing a new state, keep the previous version as `state/water.json.bak` for manual recovery.
+5. **Schema validation**: On read, verify that required fields (`date`, `target`, `total`, `records`) exist. If any are missing, reinitialize gracefully.
+
+## Observability & Logging
+
+If the host platform supports file logging, maintain minimal observability so the user (and you) can answer "Why didn't yesterday's 21:00 reminder fire?"
+
+**Recommended log structure:**
+
+```
+logs/
+  water-reminder.log          # Human-readable daily log
+  water-alerts.json           # Continuous failure alerts
+```
+
+**Log entry format (one line per event):**
+```
+[2026-05-25 21:00:03] REMIND sent | planned:300ml | channel:weixin | status:delivered
+[2026-05-25 21:15:00] USER_REPLY | actual:250ml | total:1250 | remaining:250
+[2026-05-25 21:15:01] ADJUST | future_reminders:1 | new_planned:250ml
+[2026-05-25 22:30:00] SUMMARY | total:1500 | rate:100%
+[2026-05-25 22:30:05] SUMMARY_ERR | reason:user_not_reachable
+```
+
+**Failure tracking:**
+- If a scheduled reminder fails to deliver (e.g., API error, user unreachable), log it.
+- If the **same reminder slot fails 3 or more consecutive times**, write an entry to `water-alerts.json` so the master session can surface it to the user on next interaction:
+  ```json
+  { "time": "21:00", "failures": 5, "last_error": "delivery_timeout", "suggested_action": "Check messaging channel" }
+  ```
+- Never silently drop failures. The user should know if their reminders are broken.
+
 ## Progress Bar Format
 ```
 ██████░░░░ 900ml / 1500ml (60%)
@@ -198,14 +254,16 @@ Maintain a daily state record. The exact storage mechanism depends on the platfo
 ## Edge Cases
 
 - **User replies non-numeric at checkpoint:** ask again gently with an example
-- **No reply before next reminder:** assume default phase amount, continue tracking
+- **User replies negative number or unreasonably large number (>2000ml in one go):** validate gently. "确认一下，你刚才喝了 {amount}ml 吗？如果输错了请重新告诉我 😊"
+- **No reply before next reminder:** assume default phase amount, continue tracking. Do not skip the reminder — send it with a warm nudge: "上一条还没收到回复，按计划的 {planned}ml 帮你记上啦，继续加油 💪"
 - **User says "今天不喝了" / "skip today":**
   1. Show current progress bar and total
   2. Set remaining to 0 for today
   3. Send warm acknowledgement: "收到，休息一天 💤 今天已喝 {total}ml，明天继续加油！"
   4. Resume normal schedule tomorrow
 - **State missing:** auto-init with default target 1500ml, explain to user
-- **User changes goal mid-day:** update target, inform user with new progress bar, continue tracking from current total
+- **State corrupt (invalid JSON or missing fields):** backup the corrupt file, reinitialize with defaults, inform user
+- **User changes goal mid-day:** update target, inform user with new progress bar, continue tracking from current total. Redistribute remaining water across future reminders.
 - **Messaging channel unavailable:** log error, retry on next scheduled time, inform user of the issue
 - **User asks to stop / 停止 / 关掉 / 暂停:**
   1. Confirm stopping immediately
@@ -217,6 +275,8 @@ Maintain a daily state record. The exact storage mechanism depends on the platfo
   2. Apply requested changes
   3. If removing reminders, explicitly mention how the remaining water target is redistributed across the remaining times
   4. Present updated preview and ask for confirmation
+- **Cross-day interaction (user chats after midnight but before 06:00):** treat as "yesterday's bedtime summary follow-up" if yesterday's summary was not acknowledged. Otherwise start a new day.
+- **Consecutive failures ≥3:** when the user next interacts, proactively mention: "注意到最近 {time} 的提醒似乎没送达，需要检查一下推送渠道吗？"
 
 ## Example Consultation Flow
 
